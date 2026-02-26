@@ -1,4 +1,4 @@
-module gitlab.com/hypurr/flogger
+module github.com/gosthell/flogger
 
 go 1.25.7
 
