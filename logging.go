@@ -1,4 +1,4 @@
-package assistant
+package flogger
 
 import (
 	"context"
