@@ -73,13 +73,13 @@ func (hook *LokiHook) Fire(entry *logrus.Entry) error {
 		case error:
 			labels[k] = x.Error()
 			// Extract context from errors that implement ContextProvider
-			if ctx := utils.GetAllErrorContext(x); ctx != nil {
+			if ctx := GetAllErrorContext(x); ctx != nil {
 				for ck, cv := range ctx {
 					labels["ctx_"+ck] = fmt.Sprintf("%+v", cv)
 				}
 			}
 			// Extract stack trace from errors that implement StackProvider
-			if stack := utils.GetErrorStack(x); stack != "" {
+			if stack := GetErrorStack(x); stack != "" {
 				labels["stack"] = stack
 			}
 		default:
