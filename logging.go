@@ -27,11 +27,14 @@ type LogSpan struct {
 	spanName     string
 	startedAt    time.Time
 	ended        uint32
+	hasLogs      uint32
 }
 
 var traceSeq uint64
 var spanSeq uint64
 var eventSeq uint64
+
+const spanTrackerField = "_flogger_span_tracker"
 
 func nextTraceID(source string) string {
 	seq := atomic.AddUint64(&traceSeq, 1)
@@ -168,15 +171,17 @@ func startSpan(ctx context.Context, fallback *log.Entry, traceID, parentSpanID, 
 	})
 
 	span := &LogSpan{
-		ctx:          ctx,
-		logger:       logger,
 		traceID:      traceID,
 		spanID:       spanID,
 		parentSpanID: parentSpanID,
 		spanName:     spanName,
 		startedAt:    time.Now(),
 	}
-	logger.WithField("event_type", "span_start").Info("span start")
+	logger = logger.WithField(spanTrackerField, &span.hasLogs)
+	ctx = ContextWithLogger(ctx, logger)
+	span.ctx = ctx
+	span.logger = logger
+
 	return ctx, span
 }
 
@@ -235,11 +240,40 @@ func (s *LogSpan) End() {
 	if !atomic.CompareAndSwapUint32(&s.ended, 0, 1) {
 		return
 	}
+	if atomic.LoadUint32(&s.hasLogs) == 0 {
+		return
+	}
+
 	duration := time.Since(s.startedAt).Milliseconds()
 	s.logger.WithFields(log.Fields{
 		"event_type":       "span_end",
 		"span_duration_ms": duration,
 	}).Info("span end")
+}
+
+type spanTrackerHook struct{}
+
+func NewSpanTrackerHook() log.Hook {
+	return &spanTrackerHook{}
+}
+
+func (h *spanTrackerHook) Levels() []log.Level {
+	return log.AllLevels
+}
+
+func (h *spanTrackerHook) Fire(entry *log.Entry) error {
+	raw, exists := entry.Data[spanTrackerField]
+	if !exists || raw == nil {
+		return nil
+	}
+
+	if tracker, ok := raw.(*uint32); ok && tracker != nil {
+		if eventType, _ := entry.Data["event_type"].(string); eventType != "span_end" {
+			atomic.StoreUint32(tracker, 1)
+		}
+	}
+	delete(entry.Data, spanTrackerField)
+	return nil
 }
 
 type callTreeHook struct{}
@@ -283,6 +317,7 @@ func WithLogLevel(level log.Level) func(*log.Logger) {
 func GetLogger(opts ...func(*log.Logger)) *log.Entry {
 	logger := log.New()
 	logger.SetFormatter(&log.JSONFormatter{TimestampFormat: time.RFC3339Nano})
+	logger.AddHook(NewSpanTrackerHook())
 
 	// Apply options (can override defaults)
 	for _, opt := range opts {
