@@ -3,6 +3,7 @@ package flogger
 import (
 	"context"
 	"fmt"
+	"os"
 	"sync/atomic"
 	"time"
 
@@ -271,4 +272,42 @@ func (h *callTreeHook) Fire(entry *log.Entry) error {
 		entry.Data["span_name"] = "unknown"
 	}
 	return nil
+}
+
+func WithLogLevel(level log.Level) func(*log.Logger) {
+	return func(l *log.Logger) {
+		l.SetLevel(level)
+	}
+}
+
+func GetLogger(opts ...func(*log.Logger)) *log.Entry {
+	logger := log.New()
+	logger.SetFormatter(&log.JSONFormatter{TimestampFormat: time.RFC3339Nano})
+
+	// Apply options (can override defaults)
+	for _, opt := range opts {
+		opt(logger)
+	}
+	if os.Getenv("LOKI_URL") != "" {
+		lokiHook, err := NewLokiHook(&LokiConfig{
+			URL:   os.Getenv("LOKI_URL"),
+			Level: log.ErrorLevel,
+		})
+		if err != nil {
+			panic(err)
+		}
+
+		logger.AddHook(lokiHook)
+	}
+	entry := logger.WithFields(nil)
+	if os.Getenv("APP_NAME") != "" {
+		entry = entry.WithField("app_name", os.Getenv("APP_NAME"))
+	}
+	if os.Getenv("APP_VERSION") != "" {
+		entry = entry.WithField("app_version", os.Getenv("APP_VERSION"))
+	}
+	if os.Getenv("APP_REPO") != "" {
+		entry = entry.WithField("app_repo", os.Getenv("APP_REPO"))
+	}
+	return entry
 }
