@@ -248,7 +248,7 @@ func (s *LogSpan) End() {
 	s.logger.WithFields(log.Fields{
 		"event_type":       "span_end",
 		"span_duration_ms": duration,
-	}).Info("span end")
+	}).Debug("span end")
 }
 
 type spanTrackerHook struct{}
